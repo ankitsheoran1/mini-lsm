@@ -324,7 +324,15 @@ impl LsmStorageInner {
 
     /// Remove a key from the storage by writing an empty value.
     pub fn delete(&self, _key: &[u8]) -> Result<()> {
-        self.state.read().memtable.put(_key, &[])
+        self.state.read().memtable.put(_key, &[]);
+        let read_guard = self.state.read();
+        if read_guard.memtable.approximate_size() >= self.options.target_sst_size {
+            let lock = self.state_lock.lock();
+            if read_guard.memtable.approximate_size() >= self.options.target_sst_size {
+                self.force_freeze_memtable(&lock)?
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn path_of_sst_static(path: impl AsRef<Path>, id: usize) -> PathBuf {
@@ -349,7 +357,14 @@ impl LsmStorageInner {
 
     /// Force freeze the current memtable to an immutable memtable
     pub fn force_freeze_memtable(&self, _state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
-        unimplemented!()
+        let curr_memtable = self.state.read().memtable.clone();
+        let memtable = MemTable::create(self.next_sst_id());
+        let mut write_guard = self.state.write();
+        let write_guard = Arc::make_mut(&mut write_guard);
+        write_guard.imm_memtables.insert(0, curr_memtable);
+        //let mut state = self.state.write();
+        write_guard.memtable = Arc::new(memtable);
+        Ok(())
     }
 
     /// Force flush the earliest-created immutable memtable to disk

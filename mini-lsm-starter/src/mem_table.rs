@@ -18,7 +18,7 @@
 use std::ops::Bound;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
 use bytes::Bytes;
@@ -110,6 +110,9 @@ impl MemTable {
     pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
         self.map
             .insert(Bytes::copy_from_slice(_key), Bytes::copy_from_slice(_value));
+        let entry_size = _key.len() + _value.len();
+        let previous_size = self.approximate_size.load(Ordering::Relaxed); // Not much sure on Ordering
+        self.approximate_size.store(previous_size + entry_size, Ordering::Relaxed);
         Ok(())
         //unimplemented!()
     }
