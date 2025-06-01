@@ -112,7 +112,8 @@ impl MemTable {
             .insert(Bytes::copy_from_slice(_key), Bytes::copy_from_slice(_value));
         let entry_size = _key.len() + _value.len();
         let previous_size = self.approximate_size.load(Ordering::Relaxed); // Not much sure on Ordering
-        self.approximate_size.store(previous_size + entry_size, Ordering::Relaxed);
+        self.approximate_size
+            .store(previous_size + entry_size, Ordering::Relaxed);
         Ok(())
         //unimplemented!()
     }

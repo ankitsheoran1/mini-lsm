@@ -23,7 +23,8 @@ use std::sync::atomic::AtomicUsize;
 
 use anyhow::Result;
 use bytes::Bytes;
-use parking_lot::{Mutex, MutexGuard, RwLock};
+use nom::combinator::value;
+use parking_lot::{Mutex, MutexGuard, RawRwLock, RwLock};
 
 use crate::block::Block;
 use crate::compact::{
@@ -298,17 +299,29 @@ impl LsmStorageInner {
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, _key: &[u8]) -> Result<Option<Bytes>> {
-        match self.state.read().memtable.get(_key) {
-            Some(value) => {
-                if value.is_empty() {
-                    return Ok(None);
-                }
-                Ok(Some(value))
-            },
-            None => Ok(None),
+        let (active_memtable, imm_memtables) = {
+            let guard = self.state.read();
+            (
+                Arc::clone(&guard.memtable),
+                guard
+                    .imm_memtables
+                    .iter()
+                    .map(|table| Arc::clone(table))
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        if let Some(value) = active_memtable.get(_key) {
+            return Ok(if value.is_empty() { None } else { Some(value) });
         }
 
-        // self.get(_key)
+        for memtable in imm_memtables {
+            if let Some(value) = memtable.get(_key) {
+                return Ok(if value.is_empty() { None } else { Some(value) });
+            }
+        }
+
+        Ok(None)
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
@@ -318,21 +331,21 @@ impl LsmStorageInner {
 
     /// Put a key-value pair into the storage by writing into the current memtable.
     pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
-        self.state.read().memtable.put(_key, _value)
-        //unimplemented!()
-    }
-
-    /// Remove a key from the storage by writing an empty value.
-    pub fn delete(&self, _key: &[u8]) -> Result<()> {
-        self.state.read().memtable.put(_key, &[]);
-        let read_guard = self.state.read();
-        if read_guard.memtable.approximate_size() >= self.options.target_sst_size {
+        let guard = self.state.read();
+        guard.memtable.put(_key, _value);
+        if guard.memtable.approximate_size() >= self.options.target_sst_size {
             let lock = self.state_lock.lock();
-            if read_guard.memtable.approximate_size() >= self.options.target_sst_size {
+            if guard.memtable.approximate_size() >= self.options.target_sst_size {
+                drop(guard);
                 self.force_freeze_memtable(&lock)?
             }
         }
         Ok(())
+    }
+
+    /// Remove a key from the storage by writing an empty value.
+    pub fn delete(&self, _key: &[u8]) -> Result<()> {
+        self.put(_key, &[])
     }
 
     pub(crate) fn path_of_sst_static(path: impl AsRef<Path>, id: usize) -> PathBuf {
