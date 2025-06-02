@@ -17,6 +17,7 @@
 
 use std::cmp::{self};
 use std::collections::BinaryHeap;
+use std::collections::binary_heap::PeekMut;
 
 use anyhow::Result;
 
@@ -59,7 +60,19 @@ pub struct MergeIterator<I: StorageIterator> {
 
 impl<I: StorageIterator> MergeIterator<I> {
     pub fn create(iters: Vec<Box<I>>) -> Self {
-        unimplemented!()
+        let mut heap = BinaryHeap::new();
+
+        for (idx, iter) in iters.into_iter().enumerate() {
+            if iter.is_valid() {
+                heap.push(HeapWrapper(idx, iter))
+            }
+        }
+
+        let curr = heap.pop();
+        MergeIterator {
+            iters: heap,
+            current: curr,
+        }
     }
 }
 
@@ -69,18 +82,65 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
     type KeyType<'a> = KeySlice<'a>;
 
     fn key(&self) -> KeySlice {
-        unimplemented!()
+        self.current.as_ref().unwrap().1.key()
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        self.current.as_ref().unwrap().1.value()
     }
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        self.current
+            .as_ref()
+            .map(|curr| curr.1.is_valid())
+            .unwrap_or(false)
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        let mut curr = self.current.as_mut().unwrap();
+        // sanitize top of heap
+        loop {
+            if let Some(mut node) = self.iters.peek_mut() {
+                if node.1.key() == curr.1.key() {
+                    match node.1.next() {
+                        // duplicate
+                        Ok(()) => {
+                            // not valid -> remove
+                            if !node.1.is_valid() {
+                                PeekMut::pop(node);
+                                //self.iters.pop();
+                            }
+                        }
+                        Err(e) => {
+                            PeekMut::pop(node);
+                            //self.iters.pop();
+                            return Err(e);
+                        }
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        // next to current
+        curr.1.next()?;
+        if !curr.1.is_valid() {
+            if let Some(replacement) = self.iters.pop() {
+                self.current = Some(replacement);
+            } else {
+                self.current = None;
+            }
+            return Ok(());
+        }
+        // if we are on wrong curr
+
+        if let Some(mut node) = self.iters.peek_mut() {
+            if curr > &mut *node {
+                std::mem::swap(curr, &mut *node);
+            }
+        }
+        Ok(())
     }
 }

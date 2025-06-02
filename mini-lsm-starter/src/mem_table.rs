@@ -178,7 +178,6 @@ impl StorageIterator for MemTableIterator {
     type KeyType<'a> = KeySlice<'a>;
 
     fn value(&self) -> &[u8] {
-
         self.with_item(|item| &item.1)
 
         //unimplemented!()
@@ -189,15 +188,14 @@ impl StorageIterator for MemTableIterator {
     }
 
     fn is_valid(&self) -> bool {
-        self.with_item(|item| {
-            !item.0.is_empty() || !item.1.is_empty()
-        })
+        self.with_item(|item| !item.0.is_empty() || !item.1.is_empty())
     }
 
     fn next(&mut self) -> Result<()> {
-       let nxt = self.with_iter_mut(| iter| {
-           iter.next().map(|entry| (entry.key().clone(), entry.value().clone()))
-       });
+        let nxt = self.with_iter_mut(|iter| {
+            iter.next()
+                .map(|entry| (entry.key().clone(), entry.value().clone()))
+        });
         match nxt {
             Some(item) => {
                 self.with_item_mut(|current_item| *current_item = item);
@@ -209,6 +207,5 @@ impl StorageIterator for MemTableIterator {
                 Ok(()) // or return an error if appropriate
             }
         }
-
     }
 }
