@@ -33,25 +33,36 @@ impl LsmIterator {
     pub(crate) fn new(iter: LsmIteratorInner) -> Result<Self> {
         Ok(Self { inner: iter })
     }
+
+    fn skip_deleted_values(&mut self) -> Result<()> {
+        while self.inner.value().is_empty() && self.inner.is_valid() {
+            self.inner.next()?;
+        }
+        Ok(())
+    }
 }
 
 impl StorageIterator for LsmIterator {
     type KeyType<'a> = &'a [u8];
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        self.inner.is_valid()
     }
 
     fn key(&self) -> &[u8] {
-        unimplemented!()
+        self.inner.key().into_inner()
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        self.inner.value()
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        self.inner.next()?;
+        while self.inner.is_valid() && self.inner.value().is_empty() {
+            self.inner.next()?;
+        }
+        Ok(())
     }
 }
 
