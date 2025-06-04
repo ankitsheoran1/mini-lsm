@@ -70,22 +70,12 @@ impl<I: StorageIterator> MergeIterator<I> {
 
         for (idx, iter) in iters.into_iter().enumerate() {
             if iter.is_valid() {
-                println!("+++++++++ohh my god valid itr+++++++{}  ", idx);
                 heap.push(HeapWrapper(idx, iter))
             }
         }
 
         let curr = heap.pop().unwrap();
 
-        // let value_string = match std::str::from_utf8(curr.as_ref().unwrap().1.value()) {
-        //     Ok(v) => v,
-        //     Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        // };
-        // let key_string = match std::str::from_utf8(curr.as_ref().unwrap().1.as_ref().key()) {
-        //     Ok(v) => v,
-        //     Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        // };
-        // println!("========create  value ==={:?}====", value_string);
         MergeIterator {
             iters: heap,
             current: Some(curr),
@@ -115,31 +105,14 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
 
     fn next(&mut self) -> Result<()> {
         let mut curr = self.current.as_mut().unwrap();
-        let value_string = match std::str::from_utf8(curr.1.value()) {
-            Ok(v) => v,
-            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        };
-        println!("=========in next =={:?}====", value_string);
 
         // sanitize top of heap
         loop {
             if let Some(mut node) = self.iters.peek_mut() {
                 if node.1.key() == curr.1.key() {
-                    println!("oyee hmara match ho gya ");
                     if let Err(e) = node.1.next() {
-                        // duplicate
-                        // Ok(()) => {
-                        //     // not valid -> remove
-                        //     //if !node.1.is_valid() {
-                        //         PeekMut::pop(node);
-                        //         //self.iters.pop();
-                        //    // }
-                        // }
-                        //Err(e) => {
                         PeekMut::pop(node);
-                        //self.iters.pop();
                         return Err(e);
-                        // }
                     }
                     if !node.1.is_valid() {
                         PeekMut::pop(node);
@@ -163,77 +136,11 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
         }
         // if we are on wrong curr
 
-        let value_string = match std::str::from_utf8(curr.1.value()) {
-            Ok(v) => v,
-            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        };
-        let key_string = match std::str::from_utf8(curr.1.key().raw_ref()) {
-            Ok(v) => v,
-            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        };
-        println!(
-            "=========current only iter moved to  =={:?}====, {:?}====",
-            key_string, value_string
-        );
-
         if let Some(mut node) = self.iters.peek_mut() {
-            println!("inside last to verufy on right node ");
             if curr < &mut node {
-                println!("---swapping the node man --- ");
                 std::mem::swap(curr, &mut *node);
             }
         }
-        let value_string = match std::str::from_utf8(curr.1.value()) {
-            Ok(v) => v,
-            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        };
-        let key_string = match std::str::from_utf8(curr.1.key().raw_ref()) {
-            Ok(v) => v,
-            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        };
-        println!(
-            "=========moved to  =={:?}====, {:?}====",
-            key_string, value_string
-        );
         Ok(())
-
-        // let current = self.current.as_mut().unwrap();
-        //
-        // //  Check if there are any keys that are identical - advance the lower ranked iterators in that case
-        // while let Some(mut heap_wrapper) = self.iters.peek_mut() {
-        //     if heap_wrapper.1.key() == current.1.key() {
-        //         //  The current and the heap top have the same key. Ignore the heap top key because we organised by reverse
-        //         //  chronological order when building the heap. The value in current should be what's upheld. Advance the top
-        //         if let Err(e) = heap_wrapper.1.next() {
-        //             PeekMut::pop(heap_wrapper);
-        //             return Err(e);
-        //         }
-        //
-        //         if !heap_wrapper.1.is_valid() {
-        //             PeekMut::pop(heap_wrapper);
-        //         }
-        //     } else {
-        //         break;
-        //     }
-        // }
-        //
-        // //  advance the current iterator
-        // current.1.next()?;
-        //
-        // //  check if the current iterator continue to be valid - if not, replace with the top
-        // if !current.1.is_valid() {
-        //     if let Some(heap_wrapper) = self.iters.pop() {
-        //         self.current = Some(heap_wrapper);
-        //     }
-        //     return Ok(());
-        // }
-        //
-        // //  check if the current iterator should be replaced by the top value in the heap
-        // if let Some(mut heap_wrapper) = self.iters.peek_mut() {
-        //     if current < &mut heap_wrapper {
-        //         std::mem::swap(current, &mut *heap_wrapper);
-        //     }
-        // }
-        // Ok(())
     }
 }
