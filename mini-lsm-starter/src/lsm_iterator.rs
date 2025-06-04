@@ -16,6 +16,8 @@
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
 use anyhow::Result;
+use std::io;
+use std::io::ErrorKind;
 
 use crate::{
     iterators::{StorageIterator, merge_iterator::MergeIterator},
@@ -31,14 +33,11 @@ pub struct LsmIterator {
 
 impl LsmIterator {
     pub(crate) fn new(iter: LsmIteratorInner) -> Result<Self> {
-        Ok(Self { inner: iter })
-    }
-
-    fn skip_deleted_values(&mut self) -> Result<()> {
-        while self.inner.value().is_empty() && self.inner.is_valid() {
-            self.inner.next()?;
+        let mut itr = Self { inner: iter };
+        while itr.inner.value().is_empty() && itr.inner.is_valid() {
+            itr.inner.next()?;
         }
-        Ok(())
+        Ok(itr)
     }
 }
 
@@ -90,18 +89,34 @@ impl<I: StorageIterator> StorageIterator for FusedIterator<I> {
         Self: 'a;
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        if self.has_errored {
+            return false;
+        }
+        self.iter.is_valid()
     }
 
     fn key(&self) -> Self::KeyType<'_> {
-        unimplemented!()
+        self.iter.key()
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        self.iter.value()
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        if self.has_errored {
+            return Err(anyhow::anyhow!("Already iterator error occurred"));
+        }
+        if !self.iter.is_valid() {
+            //self.has_errored = true;
+            return Ok(());
+        }
+        match self.iter.next() {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                self.has_errored = true;
+                Err(e)
+            }
+        }
     }
 }
