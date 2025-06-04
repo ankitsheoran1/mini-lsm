@@ -132,7 +132,16 @@ impl MemTable {
 
     /// Get an iterator over a range of keys.
     pub fn scan(&self, _lower: Bound<&[u8]>, _upper: Bound<&[u8]>) -> MemTableIterator {
-        unimplemented!()
+        let lower_bound = map_bound(_lower);
+        let upper_bound = map_bound(_upper);
+        let mut itr = MemTableIteratorBuilder {
+            map: self.map.clone(),
+            iter_builder: |map| map.range((lower_bound, upper_bound)),
+            item: (Bytes::new(), Bytes::new()),
+        }
+        .build();
+        itr.next().unwrap();
+        itr
     }
 
     /// Flush the mem-table to SSTable. Implement in week 1 day 6.
@@ -188,7 +197,7 @@ impl StorageIterator for MemTableIterator {
     }
 
     fn is_valid(&self) -> bool {
-        self.with_item(|item| !item.0.is_empty() || !item.1.is_empty())
+        self.with_item(|item| !item.0.is_empty())
     }
 
     fn next(&mut self) -> Result<()> {
@@ -202,8 +211,9 @@ impl StorageIterator for MemTableIterator {
                 Ok(())
             }
             None => {
-                // Iterator exhausted - you might want to set a sentinel value
-                // or handle this case based on your requirements
+                self.with_item_mut(|current_item| {
+                    *current_item = (Bytes::from_static(&[]), Bytes::from_static(&[]))
+                });
                 Ok(()) // or return an error if appropriate
             }
         }
