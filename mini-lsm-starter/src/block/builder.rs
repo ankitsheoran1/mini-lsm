@@ -34,23 +34,52 @@ pub struct BlockBuilder {
 impl BlockBuilder {
     /// Creates a new block builder.
     pub fn new(block_size: usize) -> Self {
-        unimplemented!()
+        let first_key = KeyVec::default();
+        BlockBuilder {
+            offsets: Vec::new(),
+            data: Vec::with_capacity(block_size),
+            block_size,
+            first_key,
+        }
+        // unimplemented!()
     }
 
     /// Adds a key-value pair to the block. Returns false when the block is full.
     /// You may find the `bytes::BufMut` trait useful for manipulating binary data.
     #[must_use]
     pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
-        unimplemented!()
+        // check if it would fit in size or not
+        // Adding 6 = key_length + value_length + offset
+        let total_size = key.len() + value.len() + 6;
+        if total_size + self.data.len() + self.offsets.len() > self.block_size {
+            return false;
+        }
+        self.offsets.push(self.data.len() as u16);
+
+        self.data
+            .extend_from_slice(&(key.len() as u16).to_be_bytes());
+        self.data.extend_from_slice(key.raw_ref());
+        self.data
+            .extend_from_slice(&(value.len() as u16).to_be_bytes());
+        self.data.extend_from_slice(value);
+        if self.first_key == KeyVec::default() {
+            self.first_key = key.to_key_vec()
+        }
+        true
     }
 
     /// Check if there is no key-value pair in the block.
     pub fn is_empty(&self) -> bool {
-        unimplemented!()
+        self.data.is_empty()
     }
 
     /// Finalize the block.
     pub fn build(self) -> Block {
-        unimplemented!()
+        Block {
+            data: self.data,
+            offsets: self.offsets,
+        }
+
+        // unimplemented!()
     }
 }
