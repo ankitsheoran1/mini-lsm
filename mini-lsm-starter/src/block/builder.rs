@@ -15,7 +15,7 @@
 #![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
-use crate::key::{KeySlice, KeyVec};
+use crate::key::{Key, KeySlice, KeyVec};
 
 use super::Block;
 
@@ -34,10 +34,10 @@ pub struct BlockBuilder {
 impl BlockBuilder {
     /// Creates a new block builder.
     pub fn new(block_size: usize) -> Self {
-        let first_key = KeyVec::default();
+        let first_key = Key::new();
         BlockBuilder {
             offsets: Vec::new(),
-            data: Vec::with_capacity(block_size),
+            data: Vec::new(),
             block_size,
             first_key,
         }
@@ -48,19 +48,21 @@ impl BlockBuilder {
     /// You may find the `bytes::BufMut` trait useful for manipulating binary data.
     #[must_use]
     pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
-        // check if it would fit in size or not
-        // Adding 6 = key_length + value_length + offset
+        //check if it would fit in size or not
+        //Adding 6 = key_length + value_length + offset
         let total_size = key.len() + value.len() + 6;
-        if total_size + self.data.len() + self.offsets.len() > self.block_size {
+        if self.first_key.raw_ref().len() > 0
+            && total_size + self.data.len() + self.offsets.len() > self.block_size
+        {
             return false;
         }
         self.offsets.push(self.data.len() as u16);
 
         self.data
-            .extend_from_slice(&(key.len() as u16).to_be_bytes());
+            .extend_from_slice(&(key.len() as u16).to_le_bytes());
         self.data.extend_from_slice(key.raw_ref());
         self.data
-            .extend_from_slice(&(value.len() as u16).to_be_bytes());
+            .extend_from_slice(&(value.len() as u16).to_le_bytes());
         self.data.extend_from_slice(value);
         if self.first_key == KeyVec::default() {
             self.first_key = key.to_key_vec()
