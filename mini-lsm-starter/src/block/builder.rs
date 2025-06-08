@@ -64,7 +64,7 @@ impl BlockBuilder {
         self.data
             .extend_from_slice(&(value.len() as u16).to_le_bytes());
         self.data.extend_from_slice(value);
-        if self.first_key == KeyVec::default() {
+        if self.first_key.is_empty() {
             self.first_key = key.to_key_vec()
         }
         true

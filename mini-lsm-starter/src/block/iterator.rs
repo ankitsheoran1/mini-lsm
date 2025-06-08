@@ -90,12 +90,13 @@ impl BlockIterator {
 
     /// Move to the next key in the block.
     pub fn next(&mut self) {
-        if self.idx > self.block.offsets.len() {
+        self.idx += 1;
+        if self.idx >= self.block.offsets.len() {
             self.key.clear();
             self.value_range = (0, 0);
             return;
         }
-        self.idx += 1;
+
         self.move_to(self.idx)
     }
 
