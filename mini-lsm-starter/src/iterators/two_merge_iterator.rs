@@ -24,6 +24,7 @@ use super::StorageIterator;
 pub struct TwoMergeIterator<A: StorageIterator, B: StorageIterator> {
     a: A,
     b: B,
+    pref: i32,
     // Add fields as need
 }
 
@@ -33,7 +34,28 @@ impl<
 > TwoMergeIterator<A, B>
 {
     pub fn create(a: A, b: B) -> Result<Self> {
-        unimplemented!()
+        let itr = Self::decide(&a, &b);
+        Ok(TwoMergeIterator { a, b, pref: itr })
+    }
+
+    fn decide(a: &A, b: &B) -> i32 {
+        if !a.is_valid() && !b.is_valid() {
+            return -1;
+        }
+        if !a.is_valid() && b.is_valid() {
+            return 1;
+        }
+        if a.is_valid() && !b.is_valid() {
+            return 0;
+        }
+
+        if a.key() < b.key() {
+            0
+        } else if a.key() > b.key() {
+            1
+        } else {
+            2
+        }
     }
 }
 
@@ -45,18 +67,49 @@ impl<
     type KeyType<'a> = A::KeyType<'a>;
 
     fn key(&self) -> Self::KeyType<'_> {
-        unimplemented!()
+        if self.pref == 1 {
+            return self.b.key();
+        }
+
+        self.a.key()
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        if self.pref == 1 {
+            return self.b.value();
+        }
+
+        self.a.value()
     }
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        if self.pref < 0 {
+            false
+        } else if self.pref == 1 {
+            self.b.is_valid()
+        } else {
+            self.a.is_valid()
+        }
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        if self.pref == 1 {
+            if self.b.is_valid() {
+                self.b.next()?;
+            }
+        } else if self.pref == 2 {
+            if self.a.is_valid() {
+                self.a.next()?;
+            }
+            if self.b.is_valid() {
+                self.b.next()?;
+            }
+        } else {
+            if self.a.is_valid() {
+                self.a.next()?;
+            }
+        }
+        self.pref = TwoMergeIterator::decide(&self.a, &self.b);
+        Ok(())
     }
 }

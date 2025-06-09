@@ -74,11 +74,17 @@ impl<I: StorageIterator> MergeIterator<I> {
             }
         }
 
-        let curr = heap.pop().unwrap();
+        let curr = heap.pop();
+        if curr == None {
+            return MergeIterator {
+                iters: heap,
+                current: None,
+            };
+        }
 
         MergeIterator {
             iters: heap,
-            current: Some(curr),
+            current: curr,
         }
     }
 }
