@@ -40,7 +40,7 @@ use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::Manifest;
 use crate::mem_table::{MemTable, map_bound};
 use crate::mvcc::LsmMvccInner;
-use crate::table::{SsTable, SsTableIterator};
+use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -408,7 +408,49 @@ impl LsmStorageInner {
 
     /// Force flush the earliest-created immutable memtable to disk
     pub fn force_flush_next_imm_memtable(&self) -> Result<()> {
-        unimplemented!()
+
+        let state_lock = self.state_lock.lock();
+
+        let (oldest_table, memtable_id) = {
+            let guard = self.state.read();
+            if guard.imm_memtables.is_empty() {
+                return Ok(()); // Nothing to flush
+            }
+            let oldest_table = guard.imm_memtables.last().unwrap().clone();
+            let memtable_id = oldest_table.id();
+            (oldest_table, memtable_id)
+        };
+
+        let mut sst_builder = SsTableBuilder::new(self.options.block_size);
+        oldest_table.flush(&mut sst_builder)?;
+        let sst = Arc::new(sst_builder.build(
+            memtable_id,
+            Some(Arc::clone(&self.block_cache)),
+            self.path_of_sst(memtable_id),
+        )?);
+        {
+            let mut state_guard = self.state.write();
+
+            if state_guard.imm_memtables.is_empty() {
+                return Ok(());
+            }
+
+            let last_memtable_id = state_guard.imm_memtables.last().unwrap().id();
+            if last_memtable_id != memtable_id {
+                return Err(anyhow::anyhow!(
+                "Memtable changed during flush: expected {}, found {}",
+                memtable_id,
+                last_memtable_id
+            ));
+            }
+            let mut new_state = state_guard.as_ref().clone();
+            let flushed_memtable = new_state.imm_memtables.pop().unwrap();
+            assert_eq!(flushed_memtable.id(), memtable_id);
+            new_state.l0_sstables.insert(0, memtable_id);
+            new_state.sstables.insert(memtable_id, sst);
+            *state_guard = Arc::new(new_state);
+        }
+       Ok(())
     }
 
     pub fn new_txn(&self) -> Result<()> {
