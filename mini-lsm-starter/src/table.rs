@@ -160,7 +160,7 @@ impl SsTable {
                 file,
                 block_meta_offset: offset_idx,
                 id,
-                block_cache: None,
+                block_cache,
                 first_key: meta.first().unwrap().first_key.clone(),
                 last_key: meta.last().unwrap().last_key.clone(),
                 block_meta: meta,
@@ -206,16 +206,10 @@ impl SsTable {
     /// Read a block from disk, with block cache. (Day 4)
     pub fn read_block_cached(&self, block_idx: usize) -> Result<Arc<Block>> {
         match &self.block_cache {
-            None => Err(anyhow::anyhow!("cache is not intialized")),
-            Some(cache) => {
-                let data = cache
-                    .try_get_with((self.id, block_idx), || self.read_block(block_idx))
-                    .map_err(|e| {
-                        println!("Error: {:?}", e);
-                        anyhow::anyhow!(e)
-                    })?;
-                Ok(data)
-            }
+            Some(cache) => cache
+                .try_get_with((self.id, block_idx), || self.read_block(block_idx))
+                .map_err(|e| anyhow::anyhow!("Block cache error: {}", e)),
+            None => self.read_block(block_idx),
         }
     }
 
