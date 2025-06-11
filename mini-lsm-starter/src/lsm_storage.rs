@@ -35,7 +35,7 @@ use crate::compact::{
 use crate::iterators::StorageIterator;
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
-use crate::key::{Key, KeySlice};
+use crate::key::{Key, KeyBytes, KeySlice};
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::Manifest;
 use crate::mem_table::{MemTable, map_bound};
@@ -175,7 +175,14 @@ impl Drop for MiniLsm {
 
 impl MiniLsm {
     pub fn close(&self) -> Result<()> {
-        unimplemented!()
+        let mut flush_thread = self.flush_thread.lock();
+        if let Some(flush_thread) = flush_thread.take() {
+            match flush_thread.join() {
+                Ok(_) => (),
+                Err(e) => eprintln!("error in flush thread: {:?}", e),
+            }
+        }
+        Ok(())
     }
 
     /// Start the storage engine by either loading an existing directory or creating a new one if the directory does
@@ -331,6 +338,11 @@ impl LsmStorageInner {
         let sstable_ids = &disk_lsm_storage.l0_sstables;
         for sstable_id in sstable_ids {
             let sstable = disk_lsm_storage.sstables.get(&sstable_id).unwrap();
+            if _key < sstable.first_key().as_key_slice().into_inner()
+                || _key > sstable.last_key().as_key_slice().into_inner()
+            {
+                continue;
+            }
             let sstable_iter = SsTableIterator::create_and_seek_to_key(
                 Arc::clone(sstable),
                 KeySlice::from_slice(_key),
@@ -358,7 +370,7 @@ impl LsmStorageInner {
     /// Put a key-value pair into the storage by writing into the current memtable.
     pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
         let guard = self.state.read();
-        guard.memtable.put(_key, _value);
+        let res = guard.memtable.put(_key, _value);
         if guard.memtable.approximate_size() >= self.options.target_sst_size {
             let lock = self.state_lock.lock();
             if guard.memtable.approximate_size() >= self.options.target_sst_size {
@@ -366,7 +378,7 @@ impl LsmStorageInner {
                 self.force_freeze_memtable(&lock)?
             }
         }
-        Ok(())
+        res
     }
 
     /// Remove a key from the storage by writing an empty value.
@@ -408,7 +420,6 @@ impl LsmStorageInner {
 
     /// Force flush the earliest-created immutable memtable to disk
     pub fn force_flush_next_imm_memtable(&self) -> Result<()> {
-
         let state_lock = self.state_lock.lock();
 
         let (oldest_table, memtable_id) = {
@@ -438,10 +449,10 @@ impl LsmStorageInner {
             let last_memtable_id = state_guard.imm_memtables.last().unwrap().id();
             if last_memtable_id != memtable_id {
                 return Err(anyhow::anyhow!(
-                "Memtable changed during flush: expected {}, found {}",
-                memtable_id,
-                last_memtable_id
-            ));
+                    "Memtable changed during flush: expected {}, found {}",
+                    memtable_id,
+                    last_memtable_id
+                ));
             }
             let mut new_state = state_guard.as_ref().clone();
             let flushed_memtable = new_state.imm_memtables.pop().unwrap();
@@ -450,7 +461,7 @@ impl LsmStorageInner {
             new_state.sstables.insert(memtable_id, sst);
             *state_guard = Arc::new(new_state);
         }
-       Ok(())
+        Ok(())
     }
 
     pub fn new_txn(&self) -> Result<()> {
@@ -481,7 +492,7 @@ impl LsmStorageInner {
         }
 
         let merge_iterator = MergeIterator::create(iterators);
-        let sstable_iterators = self.create_sst_iterators(_lower).unwrap();
+        let sstable_iterators = self.create_sst_iterators(_lower, _upper).unwrap();
         let lsm_iterator = LsmIterator::new(
             TwoMergeIterator::create(merge_iterator, MergeIterator::create(sstable_iterators))?,
             map_bound(_upper),
@@ -489,13 +500,20 @@ impl LsmStorageInner {
         Ok(FusedIterator::new(lsm_iterator))
     }
 
-    fn create_sst_iterators(&self, lower: Bound<&[u8]>) -> Result<Vec<Box<SsTableIterator>>> {
+    fn create_sst_iterators(
+        &self,
+        lower: Bound<&[u8]>,
+        upper: Bound<&[u8]>,
+    ) -> Result<Vec<Box<SsTableIterator>>> {
         let storage = Arc::clone(&self.state.read());
         let ss_ids = &storage.l0_sstables;
         let mut sstable_iterators = Vec::new();
 
         for ss_id in ss_ids {
             let table = storage.sstables.get(ss_id).unwrap();
+            if !self.range_overlap(lower, upper, table.first_key(), table.last_key()) {
+                continue;
+            }
             let iter = match lower {
                 Bound::Included(key) => SsTableIterator::create_and_seek_to_key(
                     Arc::clone(table),
@@ -517,5 +535,33 @@ impl LsmStorageInner {
         }
 
         Ok(sstable_iterators)
+    }
+
+    fn range_overlap(
+        &self,
+        lower: Bound<&[u8]>,
+        upper: Bound<&[u8]>,
+        table_first: &KeyBytes,
+        table_last: &KeyBytes,
+    ) -> bool {
+        match lower {
+            Bound::Excluded(key) if key >= table_last.as_key_slice().into_inner() => {
+                return false;
+            }
+            Bound::Included(key) if key > table_last.as_key_slice().into_inner() => {
+                return false;
+            }
+            _ => {}
+        }
+        match upper {
+            Bound::Excluded(key) if key <= table_first.as_key_slice().into_inner() => {
+                return false;
+            }
+            Bound::Included(key) if key < table_first.as_key_slice().into_inner() => {
+                return false;
+            }
+            _ => {}
+        }
+        true
     }
 }
