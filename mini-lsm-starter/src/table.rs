@@ -151,9 +151,13 @@ impl SsTable {
         if file_size < 4 {
             return Err(anyhow::anyhow!("File too small to contain metadata offset"));
         }
-        let meta_offset = file.read(file_size - 4, 4)?;
+        let bloom_filter_offset = file.read(file_size - 4, 4)?;
+        let bloom_idx = (&bloom_filter_offset[..]).get_u32_le() as usize;
+        let raw_bloom_filter = file.read(bloom_idx as u64, file_size - 4 - bloom_idx as u64)?;
+        let bloom = Bloom::decode(&raw_bloom_filter)?;
+        let meta_offset = file.read((bloom_idx - 4) as u64, 4)?;
         let offset_idx = (&meta_offset[..]).get_u32_le() as usize;
-        let raw_meta = file.read(offset_idx as u64, file_size as u64 - 4 - offset_idx as u64)?;
+        let raw_meta = file.read(offset_idx as u64, bloom_idx as u64 - 4 - offset_idx as u64)?;
         let meta = BlockMeta::decode_block_meta(raw_meta.as_slice());
         Ok({
             SsTable {
@@ -164,7 +168,7 @@ impl SsTable {
                 first_key: meta.first().unwrap().first_key.clone(),
                 last_key: meta.last().unwrap().last_key.clone(),
                 block_meta: meta,
-                bloom: None,
+                bloom: Some(bloom),
                 max_ts: 0,
             }
         })

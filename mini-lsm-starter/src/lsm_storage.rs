@@ -343,6 +343,11 @@ impl LsmStorageInner {
             {
                 continue;
             }
+            if let Some(bloom_filter) = &sstable.bloom {
+                if !bloom_filter.may_contain(farmhash::fingerprint32(_key)) {
+                    continue;
+                }
+            }
             let sstable_iter = SsTableIterator::create_and_seek_to_key(
                 Arc::clone(sstable),
                 KeySlice::from_slice(_key),
