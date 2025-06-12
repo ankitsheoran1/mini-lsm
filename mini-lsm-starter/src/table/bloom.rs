@@ -94,6 +94,15 @@ impl Bloom {
         filter.resize(nbytes, 0);
 
         // TODO: build the bloom filter
+        for key in keys {
+            let delta = key.rotate_left(15);
+            for i in 0..k {
+                let hash = key.wrapping_add(i.wrapping_mul(delta));
+                let bit_pos = (hash as usize) % nbits;
+
+                filter.set_bit(bit_pos, true);
+            }
+        }
 
         Self {
             filter: filter.freeze(),
@@ -110,7 +119,14 @@ impl Bloom {
             let nbits = self.filter.bit_len();
             let delta = h.rotate_left(15);
 
-            // TODO: probe the bloom filter
+            for i in 0..self.k {
+                let hash = h.wrapping_add((i as u32).wrapping_mul(delta));
+                let bit_pos = (hash as usize) % nbits;
+                if !self.filter.get_bit(bit_pos) {
+                    // If ANY required bit is not set, the key is definitely NOT in the set
+                    return false;
+                }
+            }
 
             true
         }
