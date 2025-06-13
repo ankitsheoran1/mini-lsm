@@ -16,6 +16,7 @@
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
 use crate::key::{Key, KeySlice, KeyVec};
+use nom::AsChar;
 
 use super::Block;
 
@@ -44,23 +45,37 @@ impl BlockBuilder {
         // unimplemented!()
     }
 
+    fn get_overlap_with_first_key(&self, key: KeySlice) -> u16 {
+        let overlap_len = key
+            .raw_ref()
+            .iter()
+            .zip(self.first_key.raw_ref().iter())
+            .take_while(|(a, b)| a == b)
+            .count() as u16;
+        overlap_len
+    }
+
     /// Adds a key-value pair to the block. Returns false when the block is full.
     /// You may find the `bytes::BufMut` trait useful for manipulating binary data.
     #[must_use]
     pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
         //check if it would fit in size or not
         //Adding 6 = key_length + value_length + offset
-        let total_size = key.len() + value.len() + 6;
+        let overlap_len = self.get_overlap_with_first_key(key);
+        let overlap_len_bytes = overlap_len.to_le_bytes();
+        let rem_key = &(key.raw_ref())[overlap_len as usize..];
+        let rem_key_len = (rem_key.len() as u16).to_le_bytes();
+
+        let total_size = rem_key.len() + value.len() + 6;
         if self.first_key.raw_ref().len() > 0
             && total_size + self.data.len() + self.offsets.len() > self.block_size
         {
             return false;
         }
         self.offsets.push(self.data.len() as u16);
-
-        self.data
-            .extend_from_slice(&(key.len() as u16).to_le_bytes());
-        self.data.extend_from_slice(key.raw_ref());
+        self.data.extend_from_slice(&overlap_len_bytes);
+        self.data.extend_from_slice(&rem_key_len);
+        self.data.extend_from_slice(rem_key);
         self.data
             .extend_from_slice(&(value.len() as u16).to_le_bytes());
         self.data.extend_from_slice(value);
